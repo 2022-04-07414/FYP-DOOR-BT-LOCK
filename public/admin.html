@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Admin Dashboard - Albert Guest House</title>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial; background: #f4f4f4; padding: 20px; }
+    h2 { margin-bottom: 10px; }
+    table {
+      width: 100%; border-collapse: collapse; margin-bottom: 40px;
+      background: white; border-radius: 10px; overflow: hidden;
+    }
+    th, td {
+      padding: 10px; border: 1px solid #ddd; text-align: left;
+    }
+    th { background: #007bff; color: white; }
+    button {
+      margin: 5px 2px; padding: 6px 10px; cursor: pointer;
+      background: #007bff; color: white; border: none; border-radius: 5px;
+    }
+    input {
+      padding: 5px; width: 100%; box-sizing: border-box;
+    }
+    .status { font-size: 14px; color: green; margin-top: 5px; }
+    img{
+    border-radius: 100%;
+    height: 50px;
+    float: right;
+    }
+  </style>
+</head>
+<body>
+  <a href="https://wa.link/qqe99o"><img src="MY LOGO.jpg""></a>
+<h2>Admin Dashboard - User Management</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Full Name</th>
+      <th>Email</th>
+      <th>Room Name</th>
+      <th>OTP</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody id="userTable">
+    <!-- User rows will be dynamically populated here -->
+  </tbody>
+</table>
+
+<script>
+const connections = {};
+
+window.onload = async function () {
+  try {
+    const res = await fetch('/admin/users');
+    const users = await res.json();
+
+    const table = document.getElementById("userTable");
+    table.innerHTML = "";
+
+    users.forEach(user => {
+      const tr = document.createElement("tr");
+      tr.dataset.room = user.roomName;
+      tr.dataset.id = user._id;
+
+      tr.innerHTML = `
+        <td><input value="${user.fullname}" class="edit-name" disabled></td>
+        <td><input value="${user.email}" class="edit-email" disabled></td>
+        <td><input value="${user.roomName}" class="edit-room" disabled></td>
+        <td class="otpCell">${user.otp}</td>
+        <td>
+          <input placeholder="Enter PIN" class="otpInput" />
+          <button onclick="connectToESP32(this)">Connect BLE</button>
+          <button onclick="verifyOtp(this)">Verify PIN</button>
+          <div class="status">Not connected</div>
+          <button onclick="toggleDoor(this, true)">Open</button>
+          <button onclick="toggleDoor(this, false)">Close</button>
+          <br/>
+          <button onclick="resendOTP(this)">Resend PIN</button>
+          <button onclick="deleteUser(this)">Delete</button>
+          <button onclick="toggleEdit(this)">Edit</button>
+          <button onclick="saveUser(this)">Save</button>
+        </td>
+      `;
+
+      table.appendChild(tr);
+    });
+  } catch (err) {
+    alert("❌ Failed to load users");
+    console.error(err);
+  }
+};
+
+async function connectToESP32(button) {
+  const row = button.closest("tr");
+  const roomName = row.dataset.room;
+
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: roomName }],
+      optionalServices: ['4fafc201-1fb5-459e-8fcc-c5c9c331914b']
+    });
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService('4fafc201-1fb5-459e-8fcc-c5c9c331914b');
+
+    const doorChar = await service.getCharacteristic('beb5483e-36e1-4688-b7f5-ea07361b26a8');
+    const otpChar = await service.getCharacteristic('0a1b2c3d-4e5f-6789-1011-121314151617');
+
+    connections[roomName] = { doorChar, otpChar };
+    row.querySelector(".status").textContent = "✅ Connected to " + roomName;
+  } catch (err) {
+    console.error(err);
+    alert("❌ Failed to connect to BLE for " + roomName);
+  }
+}
+
+async function verifyOtp(button) {
+  const row = button.closest("tr");
+  const roomName = row.dataset.room;
+  const otpInput = row.querySelector(".otpInput").value.trim();
+  const connection = connections[roomName];
+
+  if (!otpInput) return alert("❌ Enter PIN");
+  if (!connection) return alert("❌ Connect to ESP32 first");
+
+  try {
+    const encoder = new TextEncoder();
+    await connection.otpChar.writeValue(encoder.encode(otpInput));
+    alert("✅ PIN verified");
+  } catch (err) {
+    console.error(err);
+    alert("❌ PIN verification failed");
+  }
+}
+
+async function toggleDoor(button, open) {
+  const row = button.closest("tr");
+  const roomName = row.dataset.room;
+  const connection = connections[roomName];
+
+  if (!connection) return alert("❌ Connect and verify PIN first");
+
+  try {
+    const value = open ? 0 : 1;
+    await connection.doorChar.writeValue(new Uint8Array([value]));
+    alert(open ? "🔓 Door opened" : "🔒 Door closed");
+  } catch (err) {
+    console.error(err);
+    alert("❌ Door command failed");
+  }
+}
+
+async function resendOTP(button) {
+  const row = button.closest("tr");
+  const userId = row.dataset.id;
+  const roomName = row.dataset.room;
+
+  try {
+    const res = await fetch(`/admin/resend/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      row.querySelector(".otpCell").textContent = data.otp;
+
+      // Send updated OTP via BLE
+      const connection = connections[roomName];
+      if (connection?.otpChar) {
+        const encoder = new TextEncoder();
+        await connection.otpChar.writeValue(encoder.encode(data.otp));
+      }
+
+      alert("✅ PIN resent and updated on ESP32");
+    } else {
+      alert("❌ Error resending PIN: " + data.error);
+    }
+  } catch (err) {
+    console.error(err);
+    alert("❌ Failed to resend PIN");
+  }
+}
+
+async function deleteUser(button) {
+  const row = button.closest("tr");
+  const userId = row.dataset.id;
+
+  if (!confirm("Are you sure you want to delete this user?")) return;
+
+  try {
+    const res = await fetch(`/admin/delete/${userId}`, {
+      method: 'DELETE'
+    });
+
+    if (res.ok) {
+      row.remove();
+      alert("✅ User deleted");
+    } else {
+      alert("❌ Failed to delete user");
+    }
+  } catch (err) {
+    console.error(err);
+    alert("❌ Error deleting user");
+  }
+}
+
+function toggleEdit(button) {
+  const row = button.closest("tr");
+  row.querySelectorAll('.edit-name, .edit-email, .edit-room').forEach(input => {
+    input.disabled = !input.disabled;
+  });
+}
+
+async function saveUser(button) {
+  const row = button.closest("tr");
+  const userId = row.dataset.id;
+  const fullname = row.querySelector(".edit-name").value.trim();
+  const email = row.querySelector(".edit-email").value.trim();
+  const roomName = row.querySelector(".edit-room").value.trim();
+
+  if (!fullname || !email || !roomName) return alert("❌ All fields are required");
+
+  try {
+    const res = await fetch(`/admin/update/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fullname, email, roomName })
+    });
+
+    const result = await res.json();
+    if (res.ok) {
+      row.dataset.room = roomName;
+      alert("✅ User data updated");
+    } else {
+      alert("❌ Update failed: " + result.error);
+    }
+  } catch (err) {
+    console.error(err);
+    alert("❌ Error updating user");
+  }
+}
+</script>
+
+</body>
+</html>
+

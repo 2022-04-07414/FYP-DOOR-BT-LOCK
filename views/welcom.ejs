@@ -1,0 +1,96 @@
+           
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Image Slider</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      margin-top: 50px;
+      background-image: radial-gradient(white,blue);
+      background-color: blue;
+    }
+   
+
+    #slider {
+      width: 100%;
+      height: 300px;
+      margin: 0 auto;
+      position: relative;
+      overflow: hidden;
+      border: 3px solid #333;
+      border-radius: 10px;
+      background-image: url("architecture-1853520_1280\ -\ Copy.jpg");
+    }
+
+    .slide {
+      display: none;
+      width: 100%;
+      height: 100%;
+      position: absolute;
+    }
+
+    .slide img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: none;
+    }
+    
+    .one{
+    width:500px;
+    height: auto;
+    background-image: linear-gradient(blue,rgb(255, 0, 179));
+    margin: auto;
+    color:white;
+    margin-top: 80px;
+    padding: 30px;
+    border-radius: 10px;
+    border: 0.5px solid black;
+    box-shadow: 1px 1Px 1px grey;
+    margin-bottom: 25px;
+    z-index: 1;
+    }
+    .one a{color:white;}
+   .one h1{text-align: center;}
+    button{width: 200px;height: 40px;margin: 25px;border-radius: 1px;}
+   
+  </style>
+</head>
+<body>
+
+
+  <div class="one"><a href="https://wa.link/qqe99o"><img style="border-radius: 100%;height: 50px;float: right; " src="MY LOGO.jpg""></a>
+    <h1>WELCOME TO ALBERT GUEST HOUSE</h1><a href="register.html"><button>register</button></a><a href="login.html"><button>login</button></a>
+    </div>
+  <div id="slider">
+    <div class="slide"><img src="WhatsApp Image 2025-05-06 at 11.42.51_ff5df397.jpg" alt="Image 1"></div>
+    <div class="slide"><img src="WhatsApp Image 2025-05-06 at 11.42.52_3332d471.jpg" alt="Image 2"></div>
+    <div class="slide"><img src="WhatsApp Image 2025-05-06 at 11.42.52_71271dc1.jpg" alt="Image 3"></div>
+  </div>
+  <script>
+    let current = 0;
+    const slides = document.querySelectorAll('.slide');
+
+    function showSlide(index) {
+      slides.forEach(slide => slide.style.display = 'none');
+      slides[index].style.display = 'block';
+    }
+
+    function startSlider() {
+      showSlide(current);
+      setTimeout(() => {
+        slides[current].style.display = 'none'; // Hide after 2s
+        setTimeout(() => {
+          current = (current + 1) % slides.length;
+          startSlider(); // Repeat after 1s delay
+        }, 1000); // 1s disappear
+      }, 2000); // 2s visible
+    }
+
+    window.onload = startSlider;
+  </script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Dashboard - Albert Guest House</title>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: Arial, sans-serif; background: #eef; padding: 20px;
+    }
+    .card {
+      background: white; padding: 20px; border-radius: 10px; max-width: 600px;
+      margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    h2, p { margin: 10px 0; }
+    input, button {
+      padding: 10px; margin-top: 10px; width: 100%;
+      border: 1px solid #ccc; border-radius: 5px;
+      width: 200px;
+    }
+    button {
+      background-color: #007bff; color: white; cursor: pointer;width: 200px;text-align: center;margin-left: 140px;
+    }
+    #controlButtons { margin-top: 15px; display: none;}
+    #status { margin-top: 10px; color: green; }
+    img{
+    border-radius: 100%;
+    height: 50px;
+    float: right;
+    }
+  </style>
+</head>
+<body>
+  <a href="https://wa.link/qqe99o"><img src="MY LOGO.jpg""></a>
+<div class="card">
+  <h2>Welcome to Your Room</h2>
+  <p><strong>Full Name:</strong> <span id="fullname">Loading...</span></p>
+  <p><strong>Room:</strong> <span id="roomName">Loading...</span></p>
+  <p><strong>Your OTP:</strong> <span id="otpDisplay">Loading...</span></p>
+
+  <button onclick="connectToESP32()">🔗 Connect to ESP32</button>
+  <div id="status">Not connected</div>
+
+  <input type="text" id="otpInput" placeholder="Enter OTP">
+  <button onclick="verifyOtp()">✅ Verify OTP</button>
+
+  <div id="controlButtons">
+    <button onclick="toggleDoor(true)">🔓 Open Door</button>
+    <button onclick="toggleDoor(false)">🔒 Close Door</button>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+let user = JSON.parse(localStorage.getItem('user'));
+if (!user || !user.roomName) {
+  alert("⚠️ Please log in first.");
+  window.location.href = 'login.html';
+}
+
+let device, server, doorCharacteristic, otpCharacteristic;
+let otpVerified = false;
+
+// Fetch latest OTP from server
+async function fetchLatestOTP() {
+  try {
+    const res = await fetch(`/user/${user.roomName}`);
+    const data = await res.json();
+
+    if (res.ok) {
+      user.otp = data.otp;
+      user.fullname = data.fullname;
+      user.roomName = data.roomName;
+
+      document.getElementById('fullname').textContent = data.fullname;
+      document.getElementById('roomName').textContent = data.roomName;
+      document.getElementById('otpDisplay').textContent = data.otp;
+
+      localStorage.setItem('user', JSON.stringify(user));
+    } else {
+      alert("❌ Failed to load your PIN.");
+    }
+  } catch (err) {
+    console.error(err);
+    alert("❌ Server error while loading PIN.");
+  }
+}
+
+// Run on load
+fetchLatestOTP();
+
+// Listen for real-time OTP update from server
+const socket = io();
+socket.on('otpUpdated', data => {
+  if (data.roomName === user.roomName) {
+    user.otp = data.otp;
+    localStorage.setItem('user', JSON.stringify(user));
+    document.getElementById('otpDisplay').textContent = data.otp;
+    alert("🔄 Your PIN has been updated by admin.");
+  }
+});
+
+async function connectToESP32() {
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: user.roomName }],
+      optionalServices: ['4fafc201-1fb5-459e-8fcc-c5c9c331914b']
+    });
+
+    server = await device.gatt.connect();
+    const service = await server.getPrimaryService('4fafc201-1fb5-459e-8fcc-c5c9c331914b');
+
+    doorCharacteristic = await service.getCharacteristic('beb5483e-36e1-4688-b7f5-ea07361b26a8');
+    otpCharacteristic = await service.getCharacteristic('0a1b2c3d-4e5f-6789-1011-121314151617');
+
+    document.getElementById('status').textContent = `✅ Connected to ${user.roomName}`;
+  } catch (error) {
+    console.error(error);
+    alert("❌ Failed to connect to ESP32");
+  }
+}
+
+async function verifyOtp() {
+  const inputOtp = document.getElementById('otpInput').value.trim();
+  if (inputOtp !== user.otp) {
+    alert("❌ PIN does not match");
+    return;
+  }
+
+  try {
+    const encoder = new TextEncoder();
+    await otpCharacteristic.writeValue(encoder.encode(user.otp));
+    alert("✅ PIN sent to ESP32");
+    otpVerified = true;
+    document.getElementById('controlButtons').style.display = "block";
+  } catch (error) {
+    console.error(error);
+    alert("❌ Failed to send PIN to ESP32");
+  }
+}
+
+async function toggleDoor(open) {
+  if (!otpVerified || !doorCharacteristic) {
+    alert("❌ Connect to ESP32 and verify PIN first.");
+    return;
+  }
+
+  try {
+    const value = open ? 0 : 1;
+    await doorCharacteristic.writeValue(new Uint8Array([value]));
+    alert(open ? "🔓 Door opened" : "🔒 Door closed");
+  } catch (err) {
+    console.error(err);
+    alert("⚠️ Failed to send door command.");
+  }
+}
+</script>
+
+</body>
+</html>
